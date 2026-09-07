@@ -1,8 +1,12 @@
 from fastapi import FastAPI, Query, HTTPException
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 import requests
 import base64
+import os
+import tempfile
 from Crypto.Cipher import DES
+from mutagen.mp4 import MP4, MP4Cover
 
 app = FastAPI(title="JioSaavn Unofficial API", description="Reverse-engineered JioSaavn API Wrapper")
 
@@ -71,7 +75,6 @@ def root():
 
 @app.get("/search/autocomplete")
 def autocomplete(query: str = Query(..., description="The search term")):
-    """Global Autocomplete Search"""
     return fetch_saavn_data("autocomplete.get", query=query)
 
 @app.get("/search/songs")
@@ -80,37 +83,30 @@ def search_songs(
     n: int = Query(10, description="Limit/count number"), 
     p: int = Query(1, description="Page number (1-indexed)")
 ):
-    """Songs Search"""
     return fetch_saavn_data("search.getResults", q=q, n=n, p=p)
 
 @app.get("/song")
 def get_song(pids: str = Query(..., description="Comma-separated list of song IDs")):
-    """Fetch Song Details"""
     return fetch_saavn_data("song.getDetails", pids=pids)
 
 @app.get("/album")
 def get_album(albumid: str = Query(..., description="Album ID")):
-    """Fetch Album Details"""
     return fetch_saavn_data("content.getAlbumDetails", albumid=albumid)
 
 @app.get("/artist")
 def get_artist(artistId: str = Query(..., description="Artist ID")):
-    """Fetch Artist Details"""
     return fetch_saavn_data("artist.getArtistPageDetails", artistId=artistId)
 
 @app.get("/playlist")
 def get_playlist(listid: str = Query(..., description="Playlist ID")):
-    """Fetch Playlist Details"""
     return fetch_saavn_data("playlist.getDetails", listid=listid)
 
 @app.get("/lyrics")
 def get_lyrics(lyrics_id: str = Query(..., description="Song ID to fetch lyrics for")):
-    """Fetch Lyrics"""
     return fetch_saavn_data("lyrics.get", lyrics_id=lyrics_id)
 
 @app.get("/decrypt")
 def decrypt_url(url: str = Query(..., description="Base64 encrypted media URL")):
-    """Decrypt the high-quality audio stream URL"""
     decrypted = decrypt_audio_url(url)
     return {
         "encrypted_url": url,
@@ -123,3 +119,68 @@ def decrypt_url(url: str = Query(..., description="Base64 encrypted media URL"))
             "320kbps": decrypted.replace("_160", "_320").replace("_320", "_320")
         }
     }
+
+@app.get("/download")
+def download_audio(
+    url: str = Query(..., description="Direct audio URL to download"),
+    title: str = Query("", description="Song Title"),
+    artist: str = Query("", description="Artist Name"),
+    album: str = Query("", description="Album Name"),
+    image: str = Query("", description="Cover Image URL")
+):
+    """Downloads audio, adds ID3 tags, and returns it as a file."""
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing audio URL")
+        
+    audio_path = None
+    try:
+        # Create temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as tmp_audio:
+            audio_path = tmp_audio.name
+        
+        # Download audio
+        audio_resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True)
+        audio_resp.raise_for_status()
+        
+        with open(audio_path, 'wb') as f:
+            for chunk in audio_resp.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        
+        # Tag metadata using mutagen
+        audio = MP4(audio_path)
+        if title: audio['\xa9nam'] = title
+        if artist: audio['\xa9ART'] = artist
+        if album: audio['\xa9alb'] = album
+        
+        # Download and inject cover image
+        if image:
+            try:
+                img_resp = requests.get(image, headers={'User-Agent': 'Mozilla/5.0'})
+                if img_resp.status_code == 200:
+                    audio['covr'] = [MP4Cover(img_resp.content, imageformat=MP4Cover.FORMAT_JPEG)]
+            except Exception:
+                pass # Ignore image error, continue without cover
+            
+        audio.save()
+        
+        # Read the file into memory to send
+        with open(audio_path, 'rb') as f:
+            data = f.read()
+            
+        # Clean up temp file
+        os.unlink(audio_path)
+        
+        # Sanitize filename
+        safe_title = ''.join([c for c in title if c.isalnum() or c in ' -_']).strip() or 'song'
+        
+        # Return response
+        headers = {
+            'Content-Disposition': f'attachment; filename="{safe_title}.m4a"'
+        }
+        return Response(content=data, media_type="audio/mp4", headers=headers)
+        
+    except Exception as e:
+        if audio_path and os.path.exists(audio_path):
+            os.unlink(audio_path)
+        raise HTTPException(status_code=500, detail=str(e))
