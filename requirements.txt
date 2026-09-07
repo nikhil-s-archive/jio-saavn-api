@@ -2,3 +2,4 @@ fastapi
 httpx
 pycryptodome
 uvicorn
+requests
