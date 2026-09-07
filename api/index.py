@@ -21,20 +21,21 @@ BASE_PARAMS = {
     "api_version": "4"
 }
 
-# Browser-like headers to bypass API blocks
+# Browser-like headers with Indian IP spoofing to bypass regional licensing blocks
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
     "Referer": "https://www.jiosaavn.com/",
     "Origin": "https://www.jiosaavn.com",
-    "Connection": "keep-alive"
+    "X-Forwarded-For": "49.36.15.10",  # Reliance Jio IP (India)
+    "Cookie": "L=english; DL=english; country=IN;"
 }
 
 # --- Helper Functions ---
 
 def fetch_saavn_data(call: str, **kwargs) -> dict:
-    """Helper function to make requests simulating a real browser."""
+    """Helper function to make requests simulating a real browser from India."""
     params = BASE_PARAMS.copy()
     params["__call"] = call
     params.update(kwargs)
