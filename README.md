@@ -15,7 +15,7 @@ Built for deployment on **Vercel** with built-in geo-unblocking (Indian IP spoof
 
 You can deploy this API directly to your Vercel account with one click:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/nikhil-s-archive/jio-saavn-api)
 
 > **⚠️ Vercel Deployment Note:** Vercel's free serverless functions have a **4.5 MB maximum response limit**. If you use the `/download` endpoint for `320kbps` songs (which are often 8MB+), Vercel will throw a `500 Internal Server Error`. The download endpoint works perfectly on Vercel for `96kbps` and `160kbps` qualities. For 320kbps downloads, consider hosting on a VPS like Railway, Render, or DigitalOcean.
 
@@ -37,7 +37,7 @@ Once deployed (or running locally), you can access the following endpoints:
 | `/download` | `GET` | `url`, `title`, `artist`, `album`, `image` | Downloads audio, adds cover/metadata, returns `.m4a` file |
 
 ### Try the Interactive UI
-Navigate to `https://<your-deployment-url>.vercel.app/docs` to test all endpoints interactively.
+Navigate to `https://jio-saavn-api-three-drab.vercel.app/docs` to test all endpoints interactively.
 
 ## Local Setup
 
@@ -47,3 +47,20 @@ To run this project locally on your machine:
    ```bash
    git clone [https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME.git)
    cd YOUR_REPO_NAME
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Run the FastAPI development server:**
+   ```bash
+   uvicorn api.index:app --reload
+   ```
+
+4. Open `http://127.0.0.1:8000/docs` in your browser.
+
+## Credits & Disclaimer
+* API reverse engineering specification and DES decryption logic based on research by [Sagarithm / Sagar Kewat](https://www.sagarithm.in/b/jiosaavn-api-reverse-engineering-client-specification).
+* **Disclaimer:** This project is for educational and research purposes only. The JioSaavn API is internal. Do not use this to pirate copyrighted content or overload JioSaavn's servers.
