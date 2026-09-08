@@ -32,11 +32,9 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
     "Referer": "https://www.jiosaavn.com/",
     "Origin": "https://www.jiosaavn.com",
-    "X-Forwarded-For": "49.36.15.10",  # Reliance Jio IP (India)
+    "X-Forwarded-For": "49.36.15.10",
     "Cookie": "L=english; DL=english; country=IN;"
 }
-
-# --- Helper Functions ---
 
 def fetch_saavn_data(call: str, **kwargs) -> dict:
     """Helper function to make requests simulating a real browser from India."""
