@@ -45,8 +45,8 @@ To run this project locally on your machine:
 
 1. **Clone the repository:**
    ```bash
-   git clone [https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME.git](https://github.com/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME.git)
-   cd YOUR_REPO_NAME
+   git clone https://github.com/nikhil-s-archive/jio-saavn-api.git
+   cd jio-saavn-api.git
    ```
 
 2. **Install dependencies:**
