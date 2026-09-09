@@ -166,33 +166,36 @@ def get_playlist(listid: str = Query(..., description="Playlist ID")):
 @app.get("/lyrics")
 def get_lyrics(lyrics_id: str = Query(..., description="Song ID to fetch lyrics for")):
     return fetch_saavn_data("lyrics.get", lyrics_id=lyrics_id)
+
 @app.get("/charts", tags=["Charts & Discovery"])
 def get_charts(
-    category: Literal["all", "trending", "hit-songs", "new-releases", "top-artists", "top-playlists"] = Query(
+    category: Literal["all", "trending", "new-releases", "top-artists", "top-playlists", "charts-list", "chart-details"] = Query(
         "all", 
-        description="Select a specific chart, or use 'all' to fetch a complete homepage dashboard."
+        description="Select a specific chart, or use 'all' for a dashboard."
     ),
-    n: int = Query(50, description="Number of items to fetch (applies to playlists & releases)"), 
+    chart_token: str = Query(
+        "zlJfJYVuyjpxWb5,FqsjKg__", 
+        description="Pass the token extracted from 'charts-list' to fetch its specific songs."
+    ),
+    n: int = Query(50, description="Number of items to fetch"), 
     p: int = Query(1, description="Page number")
-):
-    """Fetches JioSaavn charts and discovery modules in a single unified endpoint."""
+    ):
+    """Fetches JioSaavn charts and dynamically extracts playlist tokens."""
     results = {}
+    
+    # 1. Trending
     if category in ["all", "trending"]:
         results["trending"] = fetch_saavn_data("content.getTrending")
-    if category in ["all", "hit-songs"]:
-        results["hit_songs"] = fetch_saavn_data(
-            "webapi.get",
-            token="zlJfJYVuyjpxWb5,FqsjKg__",
-            type="playlist",
-            p=p,
-            n=n,
-            includeMetaTags=0,
-            ctx="wap6dot0"
-        )
+        
+    # 2. New Releases
     if category in ["all", "new-releases"]:
         results["new_releases"] = fetch_saavn_data("content.getAlbums", n=n, p=p, ctx="wap6dot0")
+        
+    # 3. Top Artists
     if category in ["all", "top-artists"]:
         results["top_artists"] = fetch_saavn_data("social.getTopArtists", ctx="wap6dot0")
+        
+    # 4. Top Playlists
     if category in ["all", "top-playlists"]:
         results["top_playlists"] = fetch_saavn_data(
             "content.getFeaturedPlaylists", 
@@ -201,11 +204,45 @@ def get_charts(
             p=p, 
             ctx="wap6dot0"
         )
+        
+    # 5. List of All Top Charts (Extracting the token from perma_url)
+    if category in ["all", "charts-list"]:
+        charts_raw = fetch_saavn_data("content.getCharts", ctx="wap6dot0")
+        
+        charts_list = []
+        for chart in charts_raw:
+            perma_url = chart.get("perma_url", "")
+            # The token is always the final string in the URL after the last slash
+            token = perma_url.strip("/").split("/")[-1] if perma_url else ""
+            
+            charts_list.append({
+                "id": chart.get("id"),
+                "title": chart.get("title"),
+                "subtitle": chart.get("subtitle"),
+                "image": chart.get("image", "").replace("50x50", "500x500"),
+                "token": token # Pass this token to /charts?category=chart-details
+            })
+            
+        results["charts_list"] = charts_list
+        
+    # 6. Chart Details / Hit Songs (Dynamic)
+    if category in ["all", "chart-details"]:
+        results["chart_details"] = fetch_saavn_data(
+            "webapi.get",
+            token=chart_token, # Uses the dynamic token
+            type="playlist",
+            p=p,
+            n=n,
+            includeMetaTags=0,
+            ctx="wap6dot0"
+        )
+        
+    # Return a specific category
     if category != "all":
         target_key = category.replace("-", "_")
         return results[target_key]
         
-    # If the user requested 'all', return the aggregated dashboard object
+    # Return everything
     return {"status": "success", "results": results}
 
 @app.get("/decrypt")
