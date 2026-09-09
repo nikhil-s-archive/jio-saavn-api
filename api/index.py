@@ -168,7 +168,7 @@ def get_lyrics(lyrics_id: str = Query(..., description="Song ID to fetch lyrics 
     return fetch_saavn_data("lyrics.get", lyrics_id=lyrics_id)
 @app.get("/charts", tags=["Charts & Discovery"])
 def get_charts(
-    category: Literal["all", "trending", "new-releases", "top-artists", "top-playlists"] = Query(
+    category: Literal["all", "trending", "hit-songs", "new-releases", "top-artists", "top-playlists"] = Query(
         "all", 
         description="Select a specific chart, or use 'all' to fetch a complete homepage dashboard."
     ),
@@ -179,6 +179,16 @@ def get_charts(
     results = {}
     if category in ["all", "trending"]:
         results["trending"] = fetch_saavn_data("content.getTrending")
+    if category in ["all", "hit-songs"]:
+        results["hit_songs"] = fetch_saavn_data(
+            "webapi.get",
+            token="zlJfJYVuyjpxWb5,FqsjKg__",
+            type="playlist",
+            p=p,
+            n=n,
+            includeMetaTags=0,
+            ctx="wap6dot0"
+        )
     if category in ["all", "new-releases"]:
         results["new_releases"] = fetch_saavn_data("content.getAlbums", n=n, p=p, ctx="wap6dot0")
     if category in ["all", "top-artists"]:
