@@ -4,11 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 import base64
 import os
+import re
 import tempfile
 from Crypto.Cipher import DES
 from mutagen.mp4 import MP4, MP4Cover
 
-app = FastAPI(title="JioSaavn Unofficial API", description="Reverse-engineered JioSaavn API Wrapper")
+app = FastAPI(title="JioSaavn Unofficial API", description="Reverse-engineered JioSaavn API Wrapper with auto-decrypted media URLs")
 
 app.add_middleware(
     CORSMiddleware,
@@ -25,7 +26,6 @@ BASE_PARAMS = {
     "api_version": "4"
 }
 
-# Browser-like headers with Indian IP spoofing to bypass regional licensing blocks
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
@@ -36,8 +36,83 @@ HEADERS = {
     "Cookie": "L=english; DL=english; country=IN;"
 }
 
+# --- Decryption & URL Enrichment Utilities ---
+
+def decrypt_audio_url_safe(encrypted_url: str) -> str | None:
+    """Decrypts DES-ECB media URL safely without throwing fatal exceptions."""
+    if not encrypted_url or not isinstance(encrypted_url, str):
+        return None
+    try:
+        key = b'38346591'
+        cipher = DES.new(key, DES.MODE_ECB)
+        decoded_b64 = base64.b64decode(encrypted_url)
+        decrypted = cipher.decrypt(decoded_b64)
+        
+        pad_len = decrypted[-1]
+        if isinstance(pad_len, int) and 1 <= pad_len <= 8:
+            return decrypted[:-pad_len].decode('utf-8')
+        return decrypted.decode('utf-8', errors='ignore')
+    except Exception:
+        return None
+
+def generate_qualities(decrypted_url: str) -> dict:
+    """Generates direct CDN URLs for all standard bitrates."""
+    if not decrypted_url:
+        return {}
+        
+    # Match standard bitrate suffixes like _96.mp4, _160.mp4, _320.mp4 or .mp3
+    match = re.search(r"_(12|48|96|160|320)\.(mp4|mp3)$", decrypted_url)
+    if match:
+        base = decrypted_url[:match.start()]
+        ext = match.group(2)
+        return {
+            "12kbps": f"{base}_12.{ext}",
+            "48kbps": f"{base}_48.{ext}",
+            "96kbps": f"{base}_96.{ext}",
+            "160kbps": f"{base}_160.{ext}",
+            "320kbps": f"{base}_320.{ext}"
+        }
+    
+    # Fallback string replacement
+    return {
+        "12kbps": decrypted_url.replace("_320", "_12").replace("_160", "_12").replace("_96", "_12"),
+        "48kbps": decrypted_url.replace("_320", "_48").replace("_160", "_48").replace("_96", "_48"),
+        "96kbps": decrypted_url.replace("_320", "_96").replace("_160", "_96"),
+        "160kbps": decrypted_url.replace("_320", "_160").replace("_96", "_160"),
+        "320kbps": decrypted_url.replace("_160", "_320").replace("_96", "_320")
+    }
+
+def enrich_song_dict(song: dict) -> dict:
+    """Appends decrypted media URLs and quality variations directly into the song dict."""
+    enc_url = song.get("encrypted_media_url")
+    if enc_url:
+        decrypted = decrypt_audio_url_safe(enc_url)
+        song["decrypted_media_url"] = decrypted
+        song["media_urls"] = generate_qualities(decrypted)
+    else:
+        song["decrypted_media_url"] = None
+        song["media_urls"] = {}
+        
+    # Also add high-resolution artwork
+    if "image" in song and isinstance(song["image"], str):
+        song["image_highres"] = song["image"].replace("150x150", "500x500").replace("50x50", "500x500")
+        
+    return song
+
+def enrich_response_recursively(data):
+    """Recursively traverses the API response to find and enrich all song dictionaries."""
+    if isinstance(data, dict):
+        if "encrypted_media_url" in data:
+            enrich_song_dict(data)
+        for key in list(data.keys()):
+            enrich_response_recursively(data[key])
+    elif isinstance(data, list):
+        for item in data:
+            enrich_response_recursively(item)
+    return data
+
 def fetch_saavn_data(call: str, **kwargs) -> dict:
-    """Helper function to make requests simulating a real browser from India."""
+    """Helper function to make requests and automatically enrich song data."""
     params = BASE_PARAMS.copy()
     params["__call"] = call
     params.update(kwargs)
@@ -45,31 +120,19 @@ def fetch_saavn_data(call: str, **kwargs) -> dict:
     try:
         response = requests.get(BASE_URL, params=params, headers=HEADERS, timeout=10)
         response.raise_for_status()
-        return response.json()
+        raw_json = response.json()
+        
+        # Injects decrypted data across all song objects in the response
+        return enrich_response_recursively(raw_json)
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"JioSaavn API Error: {str(e)}")
-
-def decrypt_audio_url(encrypted_url: str) -> str:
-    """Decrypts the media URL using DES-ECB."""
-    try:
-        key = b'38346591'
-        cipher = DES.new(key, DES.MODE_ECB)
-        decoded_b64 = base64.b64decode(encrypted_url)
-        decrypted = cipher.decrypt(decoded_b64)
-        
-        # Remove PKCS5/PKCS7 padding
-        pad_len = decrypted[-1]
-        decrypted_url = decrypted[:-pad_len].decode('utf-8')
-        return decrypted_url
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Decryption failed: {str(e)}")
 
 
 # --- API Endpoints ---
 
 @app.get("/")
 def root():
-    return {"message": "JioSaavn API Wrapper is running."}
+    return {"message": "JioSaavn API Wrapper with pre-decrypted media URLs is running."}
 
 @app.get("/search/autocomplete")
 def autocomplete(query: str = Query(..., description="The search term")):
@@ -105,17 +168,13 @@ def get_lyrics(lyrics_id: str = Query(..., description="Song ID to fetch lyrics 
 
 @app.get("/decrypt")
 def decrypt_url(url: str = Query(..., description="Base64 encrypted media URL")):
-    decrypted = decrypt_audio_url(url)
+    decrypted = decrypt_audio_url_safe(url)
+    if not decrypted:
+        raise HTTPException(status_code=400, detail="Decryption failed")
     return {
         "encrypted_url": url,
         "decrypted_url": decrypted,
-        "qualities": {
-            "12kbps": decrypted.replace("_320", "_12").replace("_160", "_12"),
-            "48kbps": decrypted.replace("_320", "_48").replace("_160", "_48"),
-            "96kbps": decrypted.replace("_320", "_96").replace("_160", "_96"),
-            "160kbps": decrypted.replace("_320", "_160").replace("_160", "_160"),
-            "320kbps": decrypted.replace("_160", "_320").replace("_320", "_320")
-        }
+        "qualities": generate_qualities(decrypted)
     }
 
 @app.get("/download")
@@ -126,17 +185,15 @@ def download_audio(
     album: str = Query("", description="Album Name"),
     image: str = Query("", description="Cover Image URL")
 ):
-    """Downloads audio, adds ID3 tags, and returns it as a file."""
+    """Downloads audio, adds ID3 tags, and returns it as an attachment."""
     if not url:
         raise HTTPException(status_code=400, detail="Missing audio URL")
         
     audio_path = None
     try:
-        # Create temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as tmp_audio:
             audio_path = tmp_audio.name
         
-        # Download audio
         audio_resp = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True)
         audio_resp.raise_for_status()
         
@@ -145,34 +202,27 @@ def download_audio(
                 if chunk:
                     f.write(chunk)
         
-        # Tag metadata using mutagen
         audio = MP4(audio_path)
         if title: audio['\xa9nam'] = title
         if artist: audio['\xa9ART'] = artist
         if album: audio['\xa9alb'] = album
         
-        # Download and inject cover image
         if image:
             try:
                 img_resp = requests.get(image, headers={'User-Agent': 'Mozilla/5.0'})
                 if img_resp.status_code == 200:
                     audio['covr'] = [MP4Cover(img_resp.content, imageformat=MP4Cover.FORMAT_JPEG)]
             except Exception:
-                pass # Ignore image error, continue without cover
+                pass
             
         audio.save()
         
-        # Read the file into memory to send
         with open(audio_path, 'rb') as f:
             data = f.read()
             
-        # Clean up temp file
         os.unlink(audio_path)
         
-        # Sanitize filename
         safe_title = ''.join([c for c in title if c.isalnum() or c in ' -_']).strip() or 'song'
-        
-        # Return response
         headers = {
             'Content-Disposition': f'attachment; filename="{safe_title}.m4a"'
         }
