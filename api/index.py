@@ -165,6 +165,37 @@ def get_playlist(listid: str = Query(..., description="Playlist ID")):
 @app.get("/lyrics")
 def get_lyrics(lyrics_id: str = Query(..., description="Song ID to fetch lyrics for")):
     return fetch_saavn_data("lyrics.get", lyrics_id=lyrics_id)
+@app.get("/charts", tags=["Charts & Discovery"])
+def get_charts(
+    category: Literal["all", "trending", "new-releases", "top-artists", "top-playlists"] = Query(
+        "all", 
+        description="Select a specific chart, or use 'all' to fetch a complete homepage dashboard."
+    ),
+    n: int = Query(50, description="Number of items to fetch (applies to playlists & releases)"), 
+    p: int = Query(1, description="Page number")
+):
+    """Fetches JioSaavn charts and discovery modules in a single unified endpoint."""
+    results = {}
+    if category in ["all", "trending"]:
+        results["trending"] = fetch_saavn_data("content.getTrending")
+    if category in ["all", "new-releases"]:
+        results["new_releases"] = fetch_saavn_data("content.getAlbums", n=n, p=p, ctx="wap6dot0")
+    if category in ["all", "top-artists"]:
+        results["top_artists"] = fetch_saavn_data("social.getTopArtists", ctx="wap6dot0")
+    if category in ["all", "top-playlists"]:
+        results["top_playlists"] = fetch_saavn_data(
+            "content.getFeaturedPlaylists", 
+            fetch_from_serialized_files="true", 
+            n=n, 
+            p=p, 
+            ctx="wap6dot0"
+        )
+    if category != "all":
+        target_key = category.replace("-", "_")
+        return results[target_key]
+        
+    # If the user requested 'all', return the aggregated dashboard object
+    return {"status": "success", "results": results}
 
 @app.get("/decrypt")
 def decrypt_url(url: str = Query(..., description="Base64 encrypted media URL")):
