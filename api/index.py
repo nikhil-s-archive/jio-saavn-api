@@ -8,6 +8,7 @@ import re
 import tempfile
 from Crypto.Cipher import DES
 from mutagen.mp4 import MP4, MP4Cover
+from typing import Literal
 
 app = FastAPI(title="JioSaavn Unofficial API", description="Reverse-engineered JioSaavn API Wrapper with auto-decrypted media URLs")
 
